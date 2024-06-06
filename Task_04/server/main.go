@@ -2,7 +2,9 @@ package main
 
 import (
 	"bufio"
+	"encoding/binary"
 	"fmt"
+	"hash/crc32"
 	"net"
 	"strings"
 )
@@ -11,6 +13,19 @@ var (
 	storedUsername     = "user1"
 	storedPasswordHash = "5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8" // SHA-256 hash of "password"
 )
+
+func calculateCRC32(data []byte) uint32 {
+	return crc32.ChecksumIEEE(data)
+}
+
+func validateChecksum(data []byte) bool {
+	if len(data) < 4 {
+		return false
+	}
+	receivedChecksum := binary.BigEndian.Uint32(data[len(data)-4:])
+	calculatedChecksum := calculateCRC32(data[:len(data)-4])
+	return receivedChecksum == calculatedChecksum
+}
 
 func authenticate(username, passwordHash string) bool {
 	return username == storedUsername && passwordHash == storedPasswordHash
@@ -38,6 +53,31 @@ func handleConnection(conn net.Conn) {
 	fmt.Println("Authentication successful for", username)
 	conn.Write([]byte("Authentication successful\n"))
 
+	// Read the message length
+	lengthBuf := make([]byte, 4)
+	_, err := reader.Read(lengthBuf)
+	if err != nil {
+		fmt.Println("Error reading message length:", err)
+		return
+	}
+	messageLength := binary.BigEndian.Uint32(lengthBuf)
+
+	// Read and validate the message with CRC
+	// Read the exact message length
+	message := make([]byte, messageLength)
+	_, err = reader.Read(message)
+	if err != nil {
+		fmt.Println("Error reading message:", err)
+		return
+	}
+	//message, _ := reader.ReadBytes('\n')
+	if validateChecksum(message) {
+		fmt.Println("Received valid message:", string(message[:len(message)-4]))
+		conn.Write([]byte("Message received successfully\n"))
+	} else {
+		fmt.Println("Received message:", string(message[:len(message)-4]))
+		conn.Write([]byte("Message received is invalid\n"))
+	}
 }
 
 func main() {
