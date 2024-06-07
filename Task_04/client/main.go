@@ -27,6 +27,23 @@ func appendChecksum(data []byte) []byte {
 	return append(data, checksumBytes...)
 }
 
+func sendMessage(conn net.Conn, messageType byte, text string) {
+	textBytes := []byte(text)
+	textLength := uint32(len(textBytes))
+
+	// Create message
+	message := make([]byte, 1+4+len(textBytes)+4)
+	message[0] = messageType
+	binary.BigEndian.PutUint32(message[1:5], textLength)
+	copy(message[5:], textBytes)
+
+	// Append checksum
+	messageWithChecksum := appendChecksum(message[:5+len(textBytes)])
+
+	// Send the message
+	conn.Write(messageWithChecksum)
+}
+
 func main() {
 	conn, err := net.Dial("tcp", "localhost:8080")
 	if err != nil {
@@ -46,7 +63,6 @@ func main() {
 	password = strings.TrimSpace(password) // Trim the password input
 	passwordHash := hashPassword(password)
 
-	//passwordHash checker
 	//fmt.Println("Converted password hash:", passwordHash) // Print the hashed password for verification
 
 	conn.Write([]byte(username + "\n"))
@@ -59,17 +75,12 @@ func main() {
 		return
 	}
 
-	// Sending a message with CRC checksum
-	message := "Hello, Server"
-	messageWithChecksum := appendChecksum([]byte(message + "\n"))
-	messageLength := uint32(len(messageWithChecksum))
-	lengthBuf := make([]byte, 4)
-	binary.BigEndian.PutUint32(lengthBuf, messageLength)
-	conn.Write(lengthBuf)
-	conn.Write(messageWithChecksum)
+	// Sending a text message with CRC checksum
+	fmt.Print("Enter message: ")
+	text, _ := reader.ReadString('\n')
+	text = strings.TrimSpace(text)
 
-	//messageWithChecksum checker
-	fmt.Println("CRC message:", messageWithChecksum)
+	sendMessage(conn, 0x01, text)
 
 	response, _ := bufio.NewReader(conn).ReadString('\n')
 	fmt.Println("Server response:", response)

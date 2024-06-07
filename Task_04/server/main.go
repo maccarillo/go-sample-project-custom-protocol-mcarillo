@@ -53,30 +53,51 @@ func handleConnection(conn net.Conn) {
 	fmt.Println("Authentication successful for", username)
 	conn.Write([]byte("Authentication successful\n"))
 
-	// Read the message length
-	lengthBuf := make([]byte, 4)
-	_, err := reader.Read(lengthBuf)
-	if err != nil {
-		fmt.Println("Error reading message length:", err)
-		return
-	}
-	messageLength := binary.BigEndian.Uint32(lengthBuf)
+	for {
+		// Read message type
+		messageType, err := reader.ReadByte()
+		if err != nil {
+			if err.Error() == "EOF" {
+				fmt.Println("Connection closed by client")
+				return
+			}
+			fmt.Println("Error reading message type:", err)
+			return
+		}
 
-	// Read and validate the message with CRC
-	// Read the exact message length
-	message := make([]byte, messageLength)
-	_, err = reader.Read(message)
-	if err != nil {
-		fmt.Println("Error reading message:", err)
-		return
-	}
-	//message, _ := reader.ReadBytes('\n')
-	if validateChecksum(message) {
-		fmt.Println("Received valid message:", string(message[:len(message)-4]))
-		conn.Write([]byte("Message received successfully\n"))
-	} else {
-		fmt.Println("Received message:", string(message[:len(message)-4]))
-		conn.Write([]byte("Message received is invalid\n"))
+		if messageType == 0x01 {
+			// Read the text length
+			lengthBuf := make([]byte, 4)
+			_, err := reader.Read(lengthBuf)
+			if err != nil {
+				fmt.Println("Error reading text length:", err)
+				return
+			}
+			textLength := binary.BigEndian.Uint32(lengthBuf)
+
+			// Read the message including the checksum
+			message := make([]byte, textLength+4)
+			_, err = reader.Read(message)
+			if err != nil {
+				fmt.Println("Error reading message:", err)
+				return
+			}
+
+			//requirements checker
+			fmt.Printf("Received message: %x, %s, %T\n", message, string(message[:textLength]), message[:textLength])
+
+			//message, _ := reader.ReadBytes('\n')
+			if validateChecksum(message) {
+				fmt.Println("Received valid message:", string(message[:len(message)-4]))
+				conn.Write([]byte("Message received successfully\n"))
+			} else {
+				fmt.Println("Received message:", string(message[:len(message)-4]))
+				conn.Write([]byte("Message received is invalid\n"))
+			}
+		} else {
+			fmt.Println("Unknown message type:", messageType)
+			conn.Write([]byte("Unknown message type\n"))
+		}
 	}
 }
 
